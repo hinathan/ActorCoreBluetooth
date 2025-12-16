@@ -30,6 +30,9 @@ public final class ConnectedPeripheral {
     private var serviceDiscoveryStreams: [UUID: AsyncStream<[BluetoothService]>.Continuation] = [:]
     private var characteristicValueStreams: [UUID: AsyncStream<(BluetoothCharacteristic, Data?)>.Continuation] = [:]
     private var notificationStreams: [UUID: AsyncStream<(BluetoothCharacteristic, Data?)>.Continuation] = [:]
+
+    public let rssiStream: AsyncStream<NSNumber>!
+    private let rssiContinuation: AsyncStream<NSNumber>.Continuation!
     
     internal init(cbPeripheral: CBPeripheral, logger: BluetoothLogger?) {
         self.identifier = cbPeripheral.identifier
@@ -37,6 +40,12 @@ public final class ConnectedPeripheral {
         self.state = PeripheralState(cbState: cbPeripheral.state)
         self.cbPeripheral = cbPeripheral
         self.logger = logger
+
+        var rssiCont: AsyncStream<NSNumber>.Continuation?
+        self.rssiStream = AsyncStream<NSNumber> { continuation in
+            rssiCont = continuation
+        }
+        self.rssiContinuation = rssiCont
         
         let proxy = ConnectedPeripheralDelegateProxy(peripheral: self, logger: logger)
         self.delegateProxy = proxy
@@ -727,6 +736,25 @@ public final class ConnectedPeripheral {
             "cancelledOperations": cancelledCount
         ])
     }
+
+    /// Request RSSI from peripehral
+    public func readRSSI() {
+        cbPeripheral.readRSSI()
+    }
+
+    /// RSSI value arrived from peripehral
+    internal func handleRSSIUpdate(rssi: NSNumber, error: Error?) {
+        if let error = error {
+            logger?.errorError("RSSI update failed", context: [
+                "error": error.localizedDescription
+            ])
+        } else {
+            logger?.internalDebug("RSSI update from peripheral", context: [
+                "rssi": rssi.stringValue
+            ])
+            rssiContinuation.yield(rssi)
+        }
+    }
 }
 
 // MARK: - Peripheral Delegate Proxy
@@ -780,5 +808,12 @@ private final class ConnectedPeripheralDelegateProxy: NSObject, @preconcurrency 
             "characteristicUUID": characteristic.uuid.uuidString
         ])
         self.peripheral?.handleNotificationStateUpdate(for: characteristic, error: error)
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didReadRSSI: NSNumber, error: Error?) {
+        logger?.internalDebug("CBPeripheralDelegate.didReadRSSI called", context: [
+            "rssi": didReadRSSI.stringValue
+        ])
+        self.peripheral?.handleRSSIUpdate(rssi: didReadRSSI, error: error)
     }
 }

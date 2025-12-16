@@ -179,6 +179,19 @@ public final class BluetoothCentral {
         logger?.internalDebug("Central manager ready state", context: ["ready": ready])
         return ready
     }
+
+    public func connectToRetrievedPeripherals(withServices: [CBUUID], timeout: TimeInterval? = nil) async throws -> [ConnectedPeripheral] {
+        try await ensureCentralManagerInitialized()
+
+        let cbPeripherals = cbCentralManager?.retrieveConnectedPeripherals(withServices: withServices) ?? []
+        var connecteds: [ConnectedPeripheral] = []
+        for cbPeripheral in cbPeripherals {
+            let connected = try await connectToRetrievedPeripheral(cbPeripheral, originalName: cbPeripheral.name, timeout: timeout)
+            connecteds.append(connected)
+        }
+        return connecteds.compactMap({ $0 })
+    }
+
     
     /// Connect to a discovered peripheral
     public func connect(_ peripheral: DiscoveredPeripheral, timeout: TimeInterval? = nil) async throws -> ConnectedPeripheral {
